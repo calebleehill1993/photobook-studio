@@ -2098,7 +2098,15 @@ async function withDpi(blob) {
   return new Blob([buf], { type: "image/jpeg" });
 }
 
+let exporting = false; // one export at a time (a double-click would interleave two)
 async function doExport() {
+  if (exporting) return;
+  exporting = true;
+  $("#export").disabled = true;
+  try { await runExport(); } finally { exporting = false; $("#export").disabled = false; }
+}
+
+async function runExport() {
   stopEditing();
   select(null); renderPage();
   await flushSave();
