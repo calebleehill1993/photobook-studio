@@ -4,75 +4,80 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Photobook Studio</title>
-<style>
-  :root { --bg: #f6f3ee; --card: #fff; --ink: #2f2b26; --muted: #7a7268; --line: #e2dcd2; --accent: #c4552f; --ok: #2f7d4f; }
-  * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-  main { max-width: 1040px; margin: 0 auto; padding: 24px 16px 64px; }
-  h1 { font-size: 26px; margin: 0 0 4px; }
-  h2 { font-size: 17px; margin: 0 0 10px; }
-  .muted { color: var(--muted); }
-  .small { font-size: 13px; }
-  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-top: 16px; }
-  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-  button, .file-btn { font: inherit; padding: 7px 12px; border-radius: 7px; border: 1px solid var(--line); background: #fff; color: var(--ink); cursor: pointer; }
-  button.primary, .file-btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-  button.danger { color: #b3261e; }
-  .file-btn input { display: none; }
-  input[type=text] { font: inherit; padding: 7px 10px; border: 1px solid var(--line); border-radius: 7px; min-width: 0; flex: 1 1 200px; }
-  .meter { height: 8px; background: var(--line); border-radius: 4px; overflow: hidden; margin: 6px 0; }
-  .meter i { display: block; height: 100%; background: var(--ok); width: 0; }
-  .books { display: grid; gap: 10px; }
-  .book { display: flex; gap: 12px; align-items: center; padding: 10px; border: 1px solid var(--line); border-radius: 8px; }
-  .book.active { border-color: var(--accent); }
-  .book .cover { width: 56px; height: 56px; border-radius: 6px; background: #eee center/cover; flex: none; }
-  .book .info { flex: 1; min-width: 0; }
-  .thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 6px; margin-top: 10px; }
-  .thumbs img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 4px; background: #eee; }
-  .bgs { display: grid; grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); gap: 6px; }
-  .bgs img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 4px; border: 1px solid var(--line); }
-  .status { min-height: 1.4em; }
-  code { background: #efe9df; padding: 1px 5px; border-radius: 4px; font-size: 13px; }
-</style>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<meta name="description" content="Lay out photo-heavy 8×8 Shutterfly pages in your browser. Your photos stay on your computer.">
+<link rel="stylesheet" href="app/style.css">
 </head>
 <body>
-<main>
-  <h1>Photobook Studio</h1>
-  <p class="muted">Early test build: how books are saved on this computer. The editor comes next.</p>
 
-  <section class="card">
-    <h2>Where your books live</h2>
-    <p class="small">Books and photos are saved <b>in this browser, on this computer</b>. Nothing is uploaded: the website only
-      delivers the app. They stay after you close the tab, restart, or go offline. They're tied to this browser
-      (Chrome and Edge on the same computer don't share), so use <b>Save book file</b> to back one up or move it to another computer.</p>
-    <div class="meter"><i id="meter"></i></div>
-    <div class="row small"><span id="usage" class="muted"></span><span style="flex:1"></span><span id="persist"></span></div>
-  </section>
-
-  <section class="card">
-    <h2>Make a test book</h2>
-    <div class="row">
-      <input type="text" id="name" placeholder="Book name" value="Test book">
-      <label class="file-btn primary">Choose photos…<input type="file" id="files" multiple accept="image/*"></label>
-      <label class="file-btn">Open book file…<input type="file" id="open" accept=".photobook,.zip"></label>
+<!-- Home: list of books + new book -->
+<section id="home" class="screen">
+  <header class="home-head">
+    <h1>Photobook Studio</h1>
+    <p class="muted">Lay out 8×8 Shutterfly pages: lots of photos per page, faces kept in frame, space left for your text.</p>
+    <p class="small muted" id="storage"></p>
+  </header>
+  <div class="home-grid">
+    <form id="new-book" class="card new-card">
+      <h2>New book</h2>
+      <label>Name <input name="name" placeholder="Summer Road Trip 2024" required></label>
+      <label>Photos per page <input name="per_page" type="number" min="1" max="40" value="20"></label>
+      <label>Background <select name="background" id="new-bg"></select></label>
+      <label class="drop" id="drop">
+        <input type="file" name="files" id="files" multiple accept=".zip,image/*,.heic">
+        <span id="drop-label"><b>Choose photos</b> or drop them here<br><small>A Google Photos / Takeout .zip works, or pick images directly</small></span>
+      </label>
+      <button class="primary" type="submit">Create book</button>
+      <div id="new-progress" class="progress hidden"><div class="bar"><i></i></div><span></span></div>
+    </form>
+    <div>
+      <div class="row books-head"><h2>Your books</h2>
+        <label class="file-btn ghost" title="Open a .photobook file saved from this app">Open book file…<input type="file" id="open-file" accept=".photobook,.zip"></label></div>
+      <div id="books" class="books"></div>
     </div>
-    <p class="status small muted" id="status"></p>
-  </section>
+  </div>
+</section>
 
-  <section class="card">
-    <h2>Books saved in this browser</h2>
-    <div id="books" class="books"></div>
-    <div id="detail"></div>
-  </section>
+<!-- Editor -->
+<section id="editor" class="screen hidden">
+  <header class="topbar">
+    <button id="back" class="ghost" title="All books">← Books</button>
+    <input id="book-name" class="book-name" spellcheck="false">
+    <span id="save-state" class="muted small"></span>
+    <div class="spacer"></div>
+    <button id="add-text" class="ghost" title="Add a text box (T)">+ Text</button>
+    <button id="spell-btn" class="ghost" title="Check the spelling of every title and caption">Spelling</button>
+    <button id="history-btn" class="ghost" title="Earlier versions of this book">History</button>
+    <button id="save-file" class="ghost" title="Save a copy of this book and its photos as a file (backup, or to move it to another computer)">Save book file</button>
+    <button id="undo" class="ghost" title="Undo (⌘Z)">↶ Undo</button>
+    <button id="redo" class="ghost" title="Redo (⇧⌘Z)">↷ Redo</button>
+    <label class="toggle"><input type="checkbox" id="show-guides" checked> Guides</label>
+    <button id="preview-btn" class="ghost" title="Hide guides and selection (P)">Preview</button>
+    <button id="export" class="primary">Export pages</button>
+  </header>
 
-  <section class="card">
-    <h2>Backgrounds that come with the app</h2>
-    <p class="small muted">These load from the website along with the app, so everyone has them.</p>
-    <div id="bgs" class="bgs"></div>
-  </section>
-</main>
+  <div class="workspace">
+    <aside class="left">
+      <div class="panel-head">Pages <button id="add-page" class="mini" title="Add a blank page">+ Page</button></div>
+      <div id="pages" class="pages"></div>
+      <div class="panel-head">Tray <span id="tray-count" class="muted small"></span>
+        <label class="mini file-btn" title="Add more photos to this book">+ Photos<input type="file" id="add-photos" multiple accept=".zip,image/*,.heic"></label>
+      </div>
+      <div id="add-progress" class="progress hidden"><div class="bar"><i></i></div><span></span></div>
+      <div id="tray" class="tray"><p class="muted small empty-tray">Photos you remove from a page wait here. Drag one onto a page, or onto a photo to swap it in.</p></div>
+    </aside>
 
-<script type="module" src="app/demo.js"></script>
+    <main id="stage" class="stage">
+      <div id="offline" class="offline hidden">Changes aren't saving — this browser's storage may be full. Free up disk space; changes are retried automatically.</div>
+      <div id="page" class="page"></div>
+      <div class="hint muted small" id="hint">Drag to move · corners to resize · double-click a photo to adjust its crop · Option-drag skips snapping</div>
+    </main>
+
+    <aside class="right" id="inspector"></aside>
+  </div>
+</section>
+
+<div id="modal" class="modal hidden"><div class="modal-card" id="modal-card"></div></div>
+
+<script type="module" src="app/editor.js"></script>
 </body>
 </html>

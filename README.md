@@ -16,16 +16,33 @@ It runs entirely in the browser on any computer (Windows, Mac, Chromebook). Noth
 
 ## Status
 
-Early: the storage layer (`app/storage.js`) and a test page (`index.html`) that saves books in the browser,
-keeps them across reloads, and saves/opens book files.
+Working in the browser: making a book from photos or a Google Photos .zip (iPhone HEIC included),
+face-aware auto-layout, the full editor (crop, rotation, multi-select, text boxes, caption boxes,
+spelling, undo, History), and export of 2400×2400 JPEGs (one at a time or as a .zip). Books are saved
+in the browser, with **Save book file** / **Open book file** for backups and moving between computers.
 
-Next:
-1. Editor (from the Mac build's `static/app.js`) on top of browser storage
-2. Import: Google Photos .zip, EXIF dates/GPS, HEIC
-3. Auto-layout and face-safe cropping (port of `layout.py`), faces/people via MediaPipe
-4. Export: page rendering on a canvas, download as .zip
-5. Starter captions/titles (offline town list), spell check (bundled dictionary)
-6. Move books over from the Mac build; compare exports page for page
+Checked against the Mac build: the same book exports pixel-for-pixel alike, and face finding gets
+96 of the Mac's 101 faces on a set of group photos (no false ones on a set of baby photos).
+
+Not yet: place names in starter captions and titles (the Mac used Apple's map lookup), scene
+captions ("Ice cream stop", "By the water") and sign reading. Starter text is date-based for now.
+
+## Files
+
+- `index.html`, `app/style.css`: the page
+- `app/editor.js`: the editor (from the Mac build's `static/app.js`)
+- `app/local-api.js`: answers the editor's requests from browser storage (the Mac build's `app.py`)
+- `app/storage.js`: IndexedDB storage, History versions, `.photobook` files
+- `app/analyze.js`: importing photos, EXIF, HEIC, face/person detection (MediaPipe)
+- `app/layout.js`: auto-layout, face-safe crops, starter captions/titles (the Mac build's `layout.py`/`describe.py`)
+- `app/spell.js`: spell check (Hunspell English dictionary via Typo.js)
+
+Libraries load from jsDelivr at pinned versions; MediaPipe's models load from Google's model storage.
+
+## Moving books over from the Mac build
+
+In the Mac build's folder: `.venv/bin/python tools/export_book.py <book-folder>` (or `--all <folder>`)
+writes `.photobook` files; open them here with **Open book file**.
 
 ## Try it locally
 
