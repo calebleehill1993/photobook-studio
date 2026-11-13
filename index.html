@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Photobook Studio</title>
+<style>
+  :root { --bg: #f6f3ee; --card: #fff; --ink: #2f2b26; --muted: #7a7268; --line: #e2dcd2; --accent: #c4552f; --ok: #2f7d4f; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 1040px; margin: 0 auto; padding: 24px 16px 64px; }
+  h1 { font-size: 26px; margin: 0 0 4px; }
+  h2 { font-size: 17px; margin: 0 0 10px; }
+  .muted { color: var(--muted); }
+  .small { font-size: 13px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-top: 16px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  button, .file-btn { font: inherit; padding: 7px 12px; border-radius: 7px; border: 1px solid var(--line); background: #fff; color: var(--ink); cursor: pointer; }
+  button.primary, .file-btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.danger { color: #b3261e; }
+  .file-btn input { display: none; }
+  input[type=text] { font: inherit; padding: 7px 10px; border: 1px solid var(--line); border-radius: 7px; min-width: 0; flex: 1 1 200px; }
+  .meter { height: 8px; background: var(--line); border-radius: 4px; overflow: hidden; margin: 6px 0; }
+  .meter i { display: block; height: 100%; background: var(--ok); width: 0; }
+  .books { display: grid; gap: 10px; }
+  .book { display: flex; gap: 12px; align-items: center; padding: 10px; border: 1px solid var(--line); border-radius: 8px; }
+  .book.active { border-color: var(--accent); }
+  .book .cover { width: 56px; height: 56px; border-radius: 6px; background: #eee center/cover; flex: none; }
+  .book .info { flex: 1; min-width: 0; }
+  .thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 6px; margin-top: 10px; }
+  .thumbs img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 4px; background: #eee; }
+  .bgs { display: grid; grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); gap: 6px; }
+  .bgs img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 4px; border: 1px solid var(--line); }
+  .status { min-height: 1.4em; }
+  code { background: #efe9df; padding: 1px 5px; border-radius: 4px; font-size: 13px; }
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+</head>
+<body>
+<main>
+  <h1>Photobook Studio</h1>
+  <p class="muted">Early test build: how books are saved on this computer. The editor comes next.</p>
+
+  <section class="card">
+    <h2>Where your books live</h2>
+    <p class="small">Books and photos are saved <b>in this browser, on this computer</b>. Nothing is uploaded: the website only
+      delivers the app. They stay after you close the tab, restart, or go offline. They're tied to this browser
+      (Chrome and Edge on the same computer don't share), so use <b>Save book file</b> to back one up or move it to another computer.</p>
+    <div class="meter"><i id="meter"></i></div>
+    <div class="row small"><span id="usage" class="muted"></span><span style="flex:1"></span><span id="persist"></span></div>
+  </section>
+
+  <section class="card">
+    <h2>Make a test book</h2>
+    <div class="row">
+      <input type="text" id="name" placeholder="Book name" value="Test book">
+      <label class="file-btn primary">Choose photos…<input type="file" id="files" multiple accept="image/*"></label>
+      <label class="file-btn">Open book file…<input type="file" id="open" accept=".photobook,.zip"></label>
+    </div>
+    <p class="status small muted" id="status"></p>
+  </section>
+
+  <section class="card">
+    <h2>Books saved in this browser</h2>
+    <div id="books" class="books"></div>
+    <div id="detail"></div>
+  </section>
+
+  <section class="card">
+    <h2>Backgrounds that come with the app</h2>
+    <p class="small muted">These load from the website along with the app, so everyone has them.</p>
+    <div id="bgs" class="bgs"></div>
+  </section>
+</main>
+
+<script type="module" src="app/demo.js"></script>
+</body>
+</html>

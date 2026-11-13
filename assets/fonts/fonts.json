@@ -1,0 +1,10 @@
+{
+  "Playfair Display": {"file": "PlayfairDisplay.ttf", "variable": true, "kind": "Serif"},
+  "Lora": {"file": "Lora.ttf", "variable": true, "kind": "Serif"},
+  "Montserrat": {"file": "Montserrat.ttf", "variable": true, "kind": "Sans"},
+  "Nunito": {"file": "Nunito.ttf", "variable": true, "kind": "Sans"},
+  "Patrick Hand": {"file": "PatrickHand-Regular.ttf", "kind": "Handwriting"},
+  "Caveat": {"file": "Caveat.ttf", "variable": true, "kind": "Handwriting"},
+  "Amatic SC": {"file": "AmaticSC-Regular.ttf", "bold": "AmaticSC-Bold.ttf", "kind": "Handwriting"},
+  "Dancing Script": {"file": "DancingScript.ttf", "variable": true, "kind": "Script"}
+}
