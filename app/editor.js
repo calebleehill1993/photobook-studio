@@ -512,6 +512,7 @@ async function openBook(s, { skipRecovery = false } = {}) {
   pageIx = 0; sel = null; cropMode = false; swapMode = false; editing = null; dirty = false;
   history = [snapshot()]; future = [];
   location.hash = s;
+  announceBook();
   $("#home").classList.add("hidden");
   $("#editor").classList.remove("hidden");
   $("#book-name").value = book.name;
@@ -1957,25 +1958,103 @@ async function renderPageImage(pg) {
   return c;
 }
 
-// The editor shows a photo with CSS: frame turned by `rotation`; inside it the photo, turned by
-// crop.angle, flipped, and shifted so the crop's center sits at the frame's center. Same here.
+// A photo as layout.py's photo_tile + paste_turned draw it: the crop is cut from the original
+// and resized straight to the frame's pixel size (high quality), then flipped/turned inside the
+// frame if asked, framed with the border, and placed on whole pixels (turned with the frame if it
+// is). Drawing the whole photo through canvas transforms instead blurs it: fractional positions
+// make every pixel a blend of its neighbors.
+const px = inches => Math.round(inches * DPI);
+
+// Shrinking a photo ~5× for print. Chrome's resize leaves jagged edges in one big step and is
+// soft in small ones, so: halve with the browser while it's more than 2× too big, then finish
+// with Lanczos-3 (what the Mac build's Pillow uses) to the exact size. Returns an ImageBitmap.
+async function resizeSmooth(src, sx, sy, sw, sh, tw, th) {
+  let cur = await createImageBitmap(src, sx, sy, sw, sh);
+  while (cur.width >= tw * 2 && cur.height >= th * 2) {
+    const half = await createImageBitmap(cur, { resizeWidth: Math.round(cur.width / 2), resizeHeight: Math.round(cur.height / 2), resizeQuality: "high" });
+    cur.close(); cur = half;
+  }
+  if (cur.width === tw && cur.height === th) return cur;
+  const c = new OffscreenCanvas(cur.width, cur.height), cx = c.getContext("2d");
+  cx.drawImage(cur, 0, 0);
+  const srcData = cx.getImageData(0, 0, cur.width, cur.height);
+  cur.close();
+  const out = lanczos(srcData, tw, th);
+  const oc = new OffscreenCanvas(tw, th);
+  oc.getContext("2d").putImageData(out, 0, 0);
+  return createImageBitmap(oc);
+}
+
+// Separable Lanczos-3 resample of ImageData to (tw, th).
+function lanczos(img, tw, th) {
+  const A = 3, sinc = x => (x === 0 ? 1 : Math.sin(Math.PI * x) / (Math.PI * x));
+  const kernel = x => (Math.abs(x) < A ? sinc(x) * sinc(x / A) : 0);
+  // For each output position: first source index and normalized weights.
+  const plan = (inLen, outLen) => {
+    const scale = inLen / outLen, support = A * Math.max(1, scale), f = Math.max(1, scale), out = [];
+    for (let i = 0; i < outLen; i++) {
+      const center = (i + 0.5) * scale, lo = Math.max(0, Math.floor(center - support)), hi = Math.min(inLen - 1, Math.ceil(center + support));
+      const w = []; let sum = 0;
+      for (let j = lo; j <= hi; j++) { const v = kernel((j + 0.5 - center) / f); w.push(v); sum += v; }
+      out.push([lo, w.map(v => v / sum)]);
+    }
+    return out;
+  };
+  const sw = img.width, sh = img.height, src = img.data;
+  const px = plan(sw, tw), py = plan(sh, th);
+  const mid = new Float32Array(tw * sh * 4); // horizontal pass
+  for (let y = 0; y < sh; y++) for (let x = 0; x < tw; x++) {
+    const [lo, w] = px[x]; let r = 0, g = 0, b = 0, a = 0;
+    for (let k = 0; k < w.length; k++) { const i = (y * sw + lo + k) * 4, v = w[k]; r += src[i] * v; g += src[i + 1] * v; b += src[i + 2] * v; a += src[i + 3] * v; }
+    const o = (y * tw + x) * 4; mid[o] = r; mid[o + 1] = g; mid[o + 2] = b; mid[o + 3] = a;
+  }
+  const out = new ImageData(tw, th), d = out.data; // vertical pass
+  for (let y = 0; y < th; y++) {
+    const [lo, w] = py[y];
+    for (let x = 0; x < tw; x++) {
+      let r = 0, g = 0, b = 0, a = 0;
+      for (let k = 0; k < w.length; k++) { const i = ((lo + k) * tw + x) * 4, v = w[k]; r += mid[i] * v; g += mid[i + 1] * v; b += mid[i + 2] * v; a += mid[i + 3] * v; }
+      const o = (y * tw + x) * 4; d[o] = r; d[o + 1] = g; d[o + 2] = b; d[o + 3] = a; // Uint8Clamped rounds and clamps
+    }
+  }
+  return out;
+}
+
 async function drawItem(ctx, it, pg) {
   const ph = photoOf(it), b = cropBox(it, ph), c = it.crop, s = S();
-  const drawW = b.W * b.k * DPI, drawH = b.H * b.k * DPI; // the whole photo at print size
-  const blob = await store.getPhoto(slug, it.photo);
-  const bmp = await uprightBitmap(blob, Math.ceil(Math.max(drawW, drawH))); // no bigger than needed
-  const fw = it.w * DPI, fh = it.h * DPI, bd = s.border > 0 ? s.border * DPI : 0;
-  ctx.save();
-  ctx.translate((it.x + it.w / 2) * DPI, (it.y + it.h / 2) * DPI);
-  if (it.rotation) ctx.rotate(rad(it.rotation));
-  if (bd) { ctx.fillStyle = frameColor(pg); ctx.fillRect(-fw / 2 - bd, -fh / 2 - bd, fw + 2 * bd, fh + 2 * bd); }
-  ctx.beginPath(); ctx.rect(-fw / 2, -fh / 2, fw, fh); ctx.clip();
-  if (c.angle) ctx.rotate(rad(c.angle));
-  ctx.scale(c.flip_x ? -1 : 1, c.flip_y ? -1 : 1);
-  ctx.translate(-b.mx * b.k * DPI, -b.my * b.k * DPI);
-  ctx.drawImage(bmp, 0, 0, drawW, drawH);
-  ctx.restore();
-  bmp.close();
+  const full = await uprightBitmap(await store.getPhoto(slug, it.photo));
+  const fw = px(it.w), fh = px(it.h);
+  // A turned photo is sized a few pixels over so its softened edges land outside the frame.
+  const over = c.angle ? 1 + 8 / Math.max(1, px(Math.min(b.bw, b.bh))) : 1;
+  const pw = px(b.bw * over), ph2 = px(b.bh * over);
+  // Scale the original to (bw, bh) inches at 300 dpi, then cut, so the crop rectangle is exact.
+  const sx = Math.round(b.x), sy = Math.round(b.y), sw = Math.max(1, Math.round(b.cw)), sh = Math.max(1, Math.round(b.ch));
+  const patch = await resizeSmooth(full, sx, sy, Math.min(sw, full.width - sx), Math.min(sh, full.height - sy), pw, ph2);
+  full.close();
+  const bd = s.border > 0 ? px(s.border) : 0;
+  const framed = new OffscreenCanvas(fw + 2 * bd, fh + 2 * bd), fx = framed.getContext("2d");
+  fx.imageSmoothingQuality = "high";
+  if (bd) { fx.fillStyle = frameColor(pg); fx.fillRect(0, 0, framed.width, framed.height); }
+  if (!c.angle && !c.flip_x && !c.flip_y) {
+    fx.drawImage(patch, Math.floor((pw - fw) / 2), Math.floor((ph2 - fh) / 2), fw, fh, bd, bd, fw, fh);
+  } else {
+    fx.save();
+    fx.beginPath(); fx.rect(bd, bd, fw, fh); fx.clip();
+    fx.translate(bd + fw / 2, bd + fh / 2);
+    if (c.angle) fx.rotate(rad(c.angle));
+    fx.scale(c.flip_x ? -1 : 1, c.flip_y ? -1 : 1);
+    fx.drawImage(patch, -pw / 2, -ph2 / 2);
+    fx.restore();
+  }
+  patch.close();
+  const cx = (it.x + it.w / 2) * DPI, cy = (it.y + it.h / 2) * DPI;
+  if (it.rotation) {
+    ctx.save(); ctx.translate(cx, cy); ctx.rotate(rad(it.rotation));
+    ctx.drawImage(framed, -framed.width / 2, -framed.height / 2);
+    ctx.restore();
+  } else {
+    ctx.drawImage(framed, Math.round(cx - framed.width / 2), Math.round(cy - framed.height / 2));
+  }
 }
 
 function turnAboutPivot(ctx, b) {
@@ -2135,10 +2214,31 @@ function togglePreview() {
   renderPage(); renderInspector();
 }
 
+// The same book open in two tabs: each would save over the other's changes. Tabs tell each other
+// which book they have open; the one that finds a twin says so.
+const tabs = "BroadcastChannel" in window ? new BroadcastChannel("photobook-studio") : null;
+function announceBook() { tabs?.postMessage({ kind: "open", id: slug }); }
+if (tabs) tabs.onmessage = e => {
+  const m = e.data;
+  if (!slug || m.id !== slug) return;
+  if (m.kind === "open") tabs.postMessage({ kind: "here", id: slug });
+  if (m.kind === "open" || m.kind === "here") {
+    modal(h("h2", {}, "This book is open in another tab"),
+      h("p", {}, "Changes made in two tabs at once overwrite each other. Close the other tab (or this one) and keep working in just one."),
+      h("div", { className: "btn-row" }, btn("Close", closeModal)));
+  }
+};
+
 async function init() {
   $("#hint").textContent = `Drag to move · Shift-click or drag a box to select several · double-click a photo to crop, or a caption/title to type · ${ALT}-drag skips snapping`;
   $("#undo").title = `Undo (${MOD}Z)`;
   $("#redo").title = `Redo (${IS_MAC ? "⇧⌘Z" : "Ctrl+Shift+Z"})`;
+  try { await store.listBooks(); } catch (e) {
+    modal(h("h2", {}, "This browser isn't letting Photobook Studio save"),
+      h("p", {}, "Books are saved in the browser, and it's refusing (this happens in some private or incognito windows, or when site data is blocked). Open Photobook Studio in a normal window."),
+      h("p", { className: "small muted" }, e.message));
+    return;
+  }
   await loadFonts();
   setupHome();
   setupStage();

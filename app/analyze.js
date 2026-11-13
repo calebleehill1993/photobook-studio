@@ -63,27 +63,58 @@ async function toBrowserImage(name, blob) {
   return Array.isArray(out) ? out[0] : out;
 }
 
+// A copy of `bmp` scaled to fit `max` px (the same bitmap if it already fits; never closes `bmp`).
+async function fitBitmap(bmp, max) {
+  if (!max || Math.max(bmp.width, bmp.height) <= max) return bmp;
+  const k = max / Math.max(bmp.width, bmp.height);
+  return createImageBitmap(bmp, { resizeWidth: Math.round(bmp.width * k), resizeHeight: Math.round(bmp.height * k), resizeQuality: "high" });
+}
+
 // Upright bitmap (EXIF rotation applied), optionally scaled to fit `max` px.
 export async function uprightBitmap(blob, max = 0) {
   const full = await createImageBitmap(blob, { imageOrientation: "from-image" });
-  if (!max || Math.max(full.width, full.height) <= max) return full;
-  const k = max / Math.max(full.width, full.height);
-  const small = await createImageBitmap(full, { resizeWidth: Math.round(full.width * k), resizeHeight: Math.round(full.height * k), resizeQuality: "high" });
-  full.close();
-  return small;
+  const out = await fitBitmap(full, max);
+  if (out !== full) full.close();
+  return out;
+}
+
+// JPEG of a bitmap, on white (so see-through PNGs don't turn black).
+async function bitmapToJpeg(bmp, quality) {
+  const c = new OffscreenCanvas(bmp.width, bmp.height), ctx = c.getContext("2d");
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(0, 0, c.width, c.height);
+  ctx.drawImage(bmp, 0, 0);
+  return c.convertToBlob({ type: "image/jpeg", quality });
 }
 
 export async function makeThumb(blob, max = THUMB) {
   const bmp = await uprightBitmap(blob, max);
-  const c = new OffscreenCanvas(bmp.width, bmp.height);
-  c.getContext("2d").drawImage(bmp, 0, 0);
+  const out = await bitmapToJpeg(bmp, 0.85);
   bmp.close();
-  return c.convertToBlob({ type: "image/jpeg", quality: 0.85 });
+  return out;
 }
 
 // ---------- when & where ----------
 const pad = n => String(n).padStart(2, "0");
 const localIso = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+
+// HEIC keeps EXIF as a separate item: "Exif\0\0" then a TIFF header ("II*\0" or "MM\0*").
+// Find it and read that TIFF block directly.
+async function heicExif(blob) {
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  for (let i = 0; i < bytes.length - 10; i++) {
+    if (bytes[i] !== 0x45 || bytes[i + 1] !== 0x78 || bytes[i + 2] !== 0x69 || bytes[i + 3] !== 0x66 || bytes[i + 4] || bytes[i + 5]) continue; // "Exif\0\0"
+    const t = i + 6, le = bytes[t] === 0x49 && bytes[t + 1] === 0x49 && bytes[t + 2] === 0x2a, be = bytes[t] === 0x4d && bytes[t + 1] === 0x4d && bytes[t + 3] === 0x2a;
+    if (!le && !be) continue;
+    try {
+      const x = await exifr.parse(bytes.slice(t, t + 256 * 1024).buffer, { tiff: true, gps: true });
+      const d = x?.DateTimeOriginal || x?.CreateDate || x?.ModifyDate;
+      return { taken: d instanceof Date && !isNaN(d) ? localIso(d) : null,
+        gps: typeof x?.latitude === "number" && typeof x?.longitude === "number" ? [x.latitude, x.longitude] : null };
+    } catch { return { taken: null, gps: null }; }
+  }
+  return { taken: null, gps: null };
+}
 
 async function exifInfo(blob, name, lastModified) {
   let taken = null, gps = null;
@@ -93,6 +124,7 @@ async function exifInfo(blob, name, lastModified) {
     if (d instanceof Date && !isNaN(d)) taken = localIso(d);
     if (x && typeof x.latitude === "number" && typeof x.longitude === "number") gps = [x.latitude, x.longitude];
   } catch { /* no EXIF */ }
+  if (!taken && !gps && /\.(heic|heif)$/i.test(name)) ({ taken, gps } = await heicExif(blob)); // exifr misses some HEIC layouts
   if (!taken) { // PXL_20240613_152436 style names
     const m = name.match(/(20\d{2})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})/);
     if (m) taken = `${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6]}`;
@@ -182,20 +214,21 @@ function regions(faces, people, W, H) {
 // One photo: returns {blob (browser-viewable original), thumb, info}.
 export async function analyzePhoto({ name, blob }) {
   const original = await toBrowserImage(name, blob);
-  const full = await createImageBitmap(original, { imageOrientation: "from-image" });
+  const full = await createImageBitmap(original, { imageOrientation: "from-image" }); // decoded once
   const W = full.width, H = full.height;
-  full.close();
-  const small = await uprightBitmap(original, DETECT_SIZE); // detection works on a smaller copy
+  const small = await fitBitmap(full, DETECT_SIZE); // detection works on a smaller copy
+  const thumbBmp = await fitBitmap(full, THUMB);
+  const thumb = await bitmapToJpeg(thumbBmp, 0.85);
   const k = W / small.width;
   let faces = [], people = [];
   try { ({ faces, people } = await detect(small)); } catch (e) { console.warn("Face detection unavailable:", e); }
-  small.close();
+  for (const b of new Set([small, thumbBmp, full])) b.close();
   const up = b => b.map(v => v * k);
   faces = faces.map(up); people = people.map(up);
   const { taken, gps } = await exifInfo(blob, name, blob.lastModified);
   const id = newId();
   const info = { id, name, w: W, h: H, ...regions(faces, people, W, H), faces: faces.length, labels: [], signs: [], gps, taken };
-  return { id, blob: original, thumb: await makeThumb(original), info };
+  return { id, blob: original, thumb, info };
 }
 
 // For tuning: faces and people found in one photo, in the detection copy's pixels.

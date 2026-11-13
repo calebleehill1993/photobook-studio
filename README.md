@@ -50,6 +50,14 @@ writes `.photobook` files; open them here with **Open book file**.
 
 then open http://localhost:5077. (Any static file server works. Chrome refuses some ports, such as 5060.)
 
+## Adding backgrounds
+
+Put the image in `assets/backgrounds/`, then refresh the list and thumbnails:
+
+    python3 -c "import os,json; d='assets/backgrounds'; json.dump(sorted(f for f in os.listdir(d) if f.endswith('.jpg')), open(d+'/index.json','w'), indent=0)"
+
+and make a ~260 px copy in `assets/backgrounds/thumbs/` with the same name.
+
 ## Credits
 
 Background photos `month-NN-photo-*` are from Unsplash (see `assets/backgrounds/CREDITS.txt`); fonts are from

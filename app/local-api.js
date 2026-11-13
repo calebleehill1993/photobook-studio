@@ -75,6 +75,15 @@ const byTaken = book => (a, b) => {
   return (pa.taken || "").localeCompare(pb.taken || "") || (pa.name || "").localeCompare(pb.name || "");
 };
 
+// Changes to one book happen one at a time (an import adding photos and the editor saving
+// must not overwrite each other): load, change, save, inside withBook.
+const locks = new Map();
+function withBook(id, fn) {
+  const run = (locks.get(id) || Promise.resolve()).then(async () => fn(await load(id)));
+  locks.set(id, run.catch(() => {}));
+  return run;
+}
+
 async function save(book, { backup = true } = {}) {
   book.rev = (book.rev || 0) + 1;
   book.saved_at = new Date().toISOString();
@@ -83,36 +92,46 @@ async function save(book, { backup = true } = {}) {
 }
 
 // Analyze photos, then lay them out (new book) or put them in the tray (added to a book).
+// Each photo is recorded in the book as soon as it's analyzed (in book.importing until the end),
+// so if the page is closed partway, reopening the book finishes with the photos that made it.
 async function analyzeJob(id, images, thenLayout) {
   const job = { kind: "analyze", done: 0, total: images.length, error: null };
   jobs.set(id, job);
   try {
-    const analyzed = {};
+    await withBook(id, book => { book.importing = { layout: thenLayout, photos: [] }; return save(book, { backup: false }); });
     for (const img of images) {
       try {
         const { id: pid, blob, thumb, info } = await analyzePhoto(img);
         await store.putPhoto(id, pid, blob, thumb);
         thumbURLs.set(pid, URL.createObjectURL(thumb));
-        analyzed[pid] = info;
+        await withBook(id, book => { book.photos[pid] = info; book.importing.photos.push(pid); return store.saveBook(book); });
       } catch (e) {
         console.warn(`Skipped ${img.name}:`, e);
         (job.skipped ??= []).push(img.name);
       }
       job.done += 1;
     }
-    if (!Object.keys(analyzed).length) throw new Error("None of those files could be opened as photos.");
-    const book = await load(id);
-    Object.assign(book.photos, analyzed);
-    const ordered = Object.keys(analyzed).sort(byTaken(book));
-    if (thenLayout) book.pages = await autoPages(book, ordered, book.default_background);
-    else book.unplaced.push(...ordered);
-    await save(book, { backup: false });
-    await store.addBackup(book); // the first layout, or the book before these photos arrived
+    const placed = await finishImport(id);
+    if (!placed) throw new Error("None of those files could be opened as photos.");
   } catch (e) {
     job.error = e.message;
   } finally {
     job.finished = true;
   }
+}
+
+// Lay out (new book) or tray (added photos) whatever an import recorded. Returns how many.
+function finishImport(id) {
+  return withBook(id, async book => {
+    if (!book.importing) return 0;
+    const ids = book.importing.photos.filter(pid => book.photos[pid]).sort(byTaken(book));
+    if (book.importing.layout && !book.pages.some(pg => pg.items.length)) book.pages = await autoPages(book, ids, book.default_background);
+    else book.unplaced.push(...ids.filter(pid => !book.unplaced.includes(pid)));
+    delete book.importing;
+    await save(book, { backup: false });
+    await store.addBackup(book); // the first layout, or the book before these photos arrived
+    return ids.length;
+  });
 }
 
 async function suggestJob(id, pages) {
@@ -164,6 +183,8 @@ const routes = [
   }],
 
   ["GET", /^\/api\/projects\/(\w+)$/, async ([id]) => {
+    const running = jobs.get(id) && !jobs.get(id).finished;
+    if (!running && (await load(id)).importing) await finishImport(id); // an import cut short (page closed)
     const book = await load(id);
     book.settings.styles ??= {};
     for (const [role, style] of Object.entries(STYLES)) book.settings.styles[role] = { ...style, ...(book.settings.styles[role] || {}) };
@@ -171,15 +192,14 @@ const routes = [
     return book;
   }],
 
-  ["PUT", /^\/api\/projects\/(\w+)$/, async ([id], incoming) => {
-    const book = await load(id);
+  ["PUT", /^\/api\/projects\/(\w+)$/, async ([id], incoming) => withBook(id, async book => {
     for (const key of ["name", "settings", "pages", "unplaced", "caption_memory"]) if (key in incoming) book[key] = incoming[key];
-    // Any photo the editor didn't place or list (e.g. one still being added) goes to the tray.
-    const seen = new Set([...book.pages.flatMap(pg => pg.items.map(i => i.photo)), ...book.unplaced]);
+    // Any photo the editor didn't place or list goes to the tray (not ones an import is still adding).
+    const seen = new Set([...book.pages.flatMap(pg => pg.items.map(i => i.photo)), ...book.unplaced, ...(book.importing?.photos || [])]);
     book.unplaced.push(...Object.keys(book.photos).filter(pid => !seen.has(pid)));
     await save(book);
     return { ok: true, rev: book.rev, saved_at: book.saved_at };
-  }],
+  })],
 
   ["DELETE", /^\/api\/projects\/(\w+)$/, async ([id]) => { await store.deleteBook(id); return { ok: true }; }],
 
@@ -188,8 +208,7 @@ const routes = [
     captions: b.pages.reduce((t, pg) => t + pg.items.filter(i => i.caption).length, 0),
   }))],
 
-  ["POST", /^\/api\/projects\/(\w+)\/backups\/([\w-]+)\/restore$/, async ([id, name]) => {
-    const book = await load(id);
+  ["POST", /^\/api\/projects\/(\w+)\/backups\/([\w-]+)\/restore$/, async ([id, name]) => withBook(id, async book => {
     const old = (await store.listBackups(id)).find(b => b.name === name);
     if (!old) throw httpError(404, "That version is gone.");
     await store.addBackup(book); // so the restore itself can be undone
@@ -198,7 +217,7 @@ const routes = [
     for (const pg of book.pages) pg.items = pg.items.filter(i => book.photos[i.photo]); // photos deleted since
     await save(book, { backup: false });
     return { ok: true };
-  }],
+  })],
 
   ["POST", /^\/api\/projects\/(\w+)\/suggest-text$/, async ([id], body) => { suggestJob(id, body.pages); return { ok: true }; }],
 
@@ -212,15 +231,14 @@ const routes = [
     return { ok: true, count: images.length };
   }],
 
-  ["DELETE", /^\/api\/projects\/(\w+)\/photos\/(\w+)$/, async ([id, pid]) => {
-    const book = await load(id);
+  ["DELETE", /^\/api\/projects\/(\w+)\/photos\/(\w+)$/, async ([id, pid]) => withBook(id, async book => {
     delete book.photos[pid];
     book.unplaced = book.unplaced.filter(i => i !== pid);
     for (const pg of book.pages) pg.items = pg.items.filter(i => i.photo !== pid);
     await save(book);
     await store.deletePhoto(id, pid);
     return { ok: true };
-  }],
+  })],
 
   ["POST", /^\/api\/projects\/(\w+)\/autolayout$/, async ([id], body) => {
     const book = await load(id);
