@@ -3,10 +3,10 @@
 // changed. Long jobs (analyzing photos, starter text) run here and report progress through
 // GET /api/projects/<id>/job, as before.
 
-import * as store from "./storage.js";
-import { analyzePhoto, collectImages, makeThumb } from "./analyze.js";
-import { layoutPage, captionFor, titleFor, monthBackground } from "./layout.js";
-import * as speller from "./spell.js";
+import * as store from "./storage.js?v=de51fd1302";
+import { analyzePhoto, collectImages, makeThumb } from "./analyze.js?v=de51fd1302";
+import { layoutPage, captionFor, titleFor, monthBackground } from "./layout.js?v=de51fd1302";
+import * as speller from "./spell.js?v=de51fd1302";
 
 const STYLES = { // text defaults; sizes in points
   title: { font: "Playfair Display", size: 22, weight: 600, color: "#3a3631", align: "center", valign: "middle" },

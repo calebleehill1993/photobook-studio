@@ -8,7 +8,7 @@
 //   build gets from Apple's Vision.
 
 import exifr from "https://cdn.jsdelivr.net/npm/exifr@7.1.3/dist/full.esm.mjs";
-import { zipEntries, newId } from "./storage.js";
+import { zipEntries, newId } from "./storage.js?v=de51fd1302";
 
 const MP = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
 const MODELS = {

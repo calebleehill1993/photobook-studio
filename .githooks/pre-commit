@@ -1,0 +1,3 @@
+#!/bin/sh
+# Re-stamp app file versions so browsers fetch each update fresh (see tools/stamp_version.py).
+python3 tools/stamp_version.py >/dev/null && git add index.html app/*.js app/style.css

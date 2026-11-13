@@ -1,6 +1,6 @@
 // Spell check with a bundled English (US) dictionary (Hunspell format, read by Typo.js), plus
 // the words added with "Add to dictionary" (kept in this browser).
-import { getSetting, setSetting } from "./storage.js";
+import { getSetting, setSetting } from "./storage.js?v=de51fd1302";
 
 const LIB = "https://cdn.jsdelivr.net/npm/typo-js@1.2.4/typo.js";
 const DICT = "https://cdn.jsdelivr.net/npm/dictionary-en@3.2.0/index";

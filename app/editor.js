@@ -1,8 +1,8 @@
 // Photobook Studio editor (browser build). Everything is saved in this browser; local-api.js answers
 // the requests the Mac build's server used to.
-import { api, thumbUrl, bgUrl, busy } from "./local-api.js";
-import * as store from "./storage.js";
-import { makeThumb, preload, uprightBitmap } from "./analyze.js";
+import { api, thumbUrl, bgUrl, busy } from "./local-api.js?v=de51fd1302";
+import * as store from "./storage.js?v=de51fd1302";
+import { makeThumb, preload, uprightBitmap } from "./analyze.js?v=de51fd1302";
 
 // Geometry is in inches (top-left origin), matching layout.py:
 // an item is a frame {x, y, w, h} plus a crop {zoom, cx, cy} — the photo covers the frame,

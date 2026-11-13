@@ -50,6 +50,12 @@ writes `.photobook` files; open them here with **Open book file**.
 
 then open http://localhost:5077. (Any static file server works. Chrome refuses some ports, such as 5060.)
 
+## Releasing
+
+Pushing to `main` publishes the site (GitHub Pages, about a minute). App files are referenced with
+`?v=<version>` so browsers pick up updates together; `tools/stamp_version.py` sets it, and the git
+hook in `.githooks/` runs it on every commit (once per clone: `git config core.hooksPath .githooks`).
+
 ## Adding backgrounds
 
 Put the image in `assets/backgrounds/`, then refresh the list and thumbnails:
